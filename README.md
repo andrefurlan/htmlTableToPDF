@@ -17,7 +17,7 @@ Support for helvetica text.
 
 Working on:
 Support for different fonts.
-Better font support.
+Better font size support.
 Support for Unicode.
 Support for matrix transformations.
 
