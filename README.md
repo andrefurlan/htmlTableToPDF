@@ -11,7 +11,7 @@ As of today:
 Support for rectangular borders.
 Support for background colors.
 Support for overflow: hidden.
-Support for display: none and visibility: hidden.
+Support for display: none and visibility: hidden.\n
 Support for font size in pixels.
 Support for helvetica text.
 
