@@ -4,7 +4,7 @@ htmlTableToPDF
 JsPDF plugin to insert html tables in pdf
 
 Renders a table in PDF from a table HTML element. It renders according to the element position, 
-and tries to maintain the importante table related css atributes.
+and tries to maintain important table related css atributes.
 
 
 As of today:
