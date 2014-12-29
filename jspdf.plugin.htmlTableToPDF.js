@@ -135,30 +135,53 @@
     }
 
     function renderText (pdf, textNode) { //TODO: finish, refactor, deal with multiple lines
-        var content = textNode.nodeValue.trim();
+        var content = textNode.nodeValue.replace(/(\r\n|\n|\r)/gm," ").trim();
         if(content){
-            var parent = textNode.parentElement;
+            var parent = textNode.parentNode;
             var wrapper = document.createElement('span');
             //TODO: add temp style to head
             wrapper.className = "textnode";
-            var newTextNode = document.createTextNode(content);
+            var newTextNode = document.createTextNode('');
             wrapper.appendChild(newTextNode);
-            textNode.remove();
+            textNode.nodeValue = '';
             parent.appendChild(wrapper);
+            var words = content.split(' ');
+            var stringArray = [];
+            var rects = 0;
+            for (var i = 0; i < words.length; i++) {
+                newTextNode.nodeValue += words[i] + ' ';
+                rects = wrapper.getClientRects().length-1;
+                if(!stringArray[rects]) stringArray[rects] = '';
+                stringArray[rects] += words[i] + ' ';
+            }
+            // someText = someText;
             var bounds = getBounds(wrapper);
             //TODO: font attributes, other fonts, etc
-            var fontSize = getCSSFloat(wrapper, 'fontSize');
-            var points = fontSize * PIXELTOPOINTS;
-            pdf.setFont('helvetica');
+            var fontSize = getCSSFloat(parent, 'fontSize');
+            var points = fontSize * pdf.internal.scaleFactor;
             pdf.setFontSize(points);
+
+            var fontType = getCSS(parent, 'fontWeight');
+            // fontType += getCSS(parent, 'fontStyle');
+            // fontType.replace('normal', '');
+
+            var fontFamily = getCSS(parent, 'fontFamily').toLowerCase().split(' ')[0].replace("'","");
+            var fonts = pdf.getFontList();
+            if (fontFamily in fonts) {
+                pdf.setFont(fontFamily, fontType);
+            } else {
+                pdf.setFont('helvetica', fontType);
+            }
+            
             // in the PDF, the y position of a text is based on the
             // glyph's origin. In most fonts, the origin is not the
             // bottom of the glyph; it is the bottom of the letter 'o',
             // but the letter 'g' has a lower bottom. In this case,
             // to get the correct position for the text is necessary
-            // to calculate the glyphs baseline position.
+            // to calculate the glyphs' baseline position.
             var baseline = getBaseline(wrapper);
-            pdf.text(content, bounds.left, baseline);
+            pdf.text(stringArray, bounds.left, baseline);
+            //return to normal
         }
         return pdf;
     };
@@ -360,8 +383,8 @@
         var baselineposition = smalldims.top - largedims.top;
         var bounds = getBounds(element);
         var height = largedims.height;
-
         return (bounds.top + (bounds.height * (baselineposition / height))) || 0;
+        // return (1 - (baselineposition / height)) || 0;
     }
 
 })(jsPDF.API);
