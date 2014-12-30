@@ -2,11 +2,7 @@
     'use strict';
 
     //CONSTANTS//
-
-    var PIXELTOPOINTS = (96/72);
-    var options = {
-        
-    };
+    var gOptions = {};
 
     //GLOBAL VARIABLES//
     
@@ -26,6 +22,7 @@
      */
     API.htmlTableToPDF = function(html, options) {
         var pdf = this;
+        gOptions = options;
         var tableElement = getTableElement(html);
         //if (!tableElement) return pdf;
         return renderTable(pdf, html);
@@ -78,54 +75,45 @@
         this.internal.write('n');  //activate clip
     };
 
-    API.applyTranslate = function(origin) {
-        //this.internal.write('1 0 0 1 97.5 -103.5 cm');
-    };
-
-    API.applyTransform = function(transform) {
-    };
 
 
     //PRIVATE FUNCTIONS//
 
     function renderTable(pdf, tableElement) {
-        var stack = [];
-        return renderNode (pdf, appendToStack(stack, tableElement.childNodes));
+        var stack = [tableElement];
+        return renderNodes (pdf, stack);
+    }
 
-        function renderNode (pdf, stack) {
-            while (stack.length) {
-                var node = stack.pop();
+    function renderNodes(pdf, stack) {
+        var appendToStack = function(stack, nodes) {
+            for (var i = nodes.length; i > 0; i--) {
+                stack[stack.length] = nodes[i-1];
+            }
+            return stack;
+        };
+
+        while (stack.length) {
+            var node = stack.pop();
+            if (isSupportedElement(node)) {
                 if (node.nodeType === node.ELEMENT_NODE) {
-                    if(node.nodeName.toUpperCase() === 'SGV') canvg();
-                    if(isElementVisible(node)) renderAttributes(pdf, node);
-                    if(isOverFlowHidden(node)) {
+                    var clipped = isOverFlowHidden(node);
+                    if(clipped) {
                         pdf.saveState();
-                        clipElement(pdf,node);
-                        //TODO: transformations
-                        //first, get the transformation matrix
-                        //and the origin
-                        //then get rid of the transform in the html
-                        //then apply the transformation to the pdf
-                        //and continue with the rest
-                        renderNode(pdf, appendToStack([], node.childNodes));
+                        if(isElementVisible(node)) renderAttributes(pdf, node);
+                        if(clipped) clipElement(pdf,node);
+                        renderNodes(pdf, appendToStack([], node.childNodes));
                         pdf.restoreState();
                     } else {
+                        if(isElementVisible(node) && isSupportedElement(node)) renderAttributes(pdf, node);
                         appendToStack(stack, node.childNodes);
                     }
                 } else if (node.nodeType === node.TEXT_NODE) {
-                    renderText(pdf, node);
+                    if(isElementVisible(node.parentNode)) renderText(pdf, node);
                     appendToStack(stack, node.childNodes);
                 }
             }
-            return pdf;
         }
-
-        function appendToStack(stack, childNodes) {
-            for (var i = childNodes.length; i > 0; i--) {
-                stack[stack.length] = childNodes[i-1];
-            }
-            return stack;
-        }
+        return pdf;
     }
 
     function renderAttributes (pdf, element) {
@@ -134,57 +122,65 @@
         return pdf;
     }
 
-    function renderText (pdf, textNode) { //TODO: finish, refactor, deal with multiple lines
-        var content = textNode.nodeValue.replace(/(\r\n|\n|\r)/gm," ").trim();
-        if(content){
-            var parent = textNode.parentNode;
-            var wrapper = document.createElement('span');
-            //TODO: add temp style to head
-            wrapper.className = "textnode";
-            var newTextNode = document.createTextNode('');
-            wrapper.appendChild(newTextNode);
-            textNode.nodeValue = '';
-            parent.appendChild(wrapper);
-            var words = content.split(' ');
-            var stringArray = [];
-            var rects = 0;
-            for (var i = 0; i < words.length; i++) {
-                newTextNode.nodeValue += words[i] + ' ';
-                rects = wrapper.getClientRects().length-1;
-                if(!stringArray[rects]) stringArray[rects] = '';
-                stringArray[rects] += words[i] + ' ';
-            }
-            // someText = someText;
-            var bounds = getBounds(wrapper);
-            //TODO: font attributes, other fonts, etc
+    function renderText(pdf, textNode) { //TODO: finish, refactor, deal with multiple lines
+        var content = textNode.nodeValue.replace(/(\r\n|\n|\r)/g, " ");
+        var parent = textNode.parentNode;
+        var wrap = getCSS(parent, 'whiteSpace');
+        var words = content.match(/[^\s-]+(\s|-)?/g); //break down in words and keep the delimiter (\s and -)
+        if(words){
+            if(content.match(/^\s/)) words[0] = " " + words[0];  // handles the anowing case of a white space at the beggining
+            // set font size
             var fontSize = getCSSFloat(parent, 'fontSize');
             var points = fontSize * pdf.internal.scaleFactor;
             pdf.setFontSize(points);
-
-            var fontType = getCSS(parent, 'fontWeight');
-            // fontType += getCSS(parent, 'fontStyle');
-            // fontType.replace('normal', '');
-
-            var fontFamily = getCSS(parent, 'fontFamily').toLowerCase().split(' ')[0].replace("'","");
+            // set font color
+            var fontColor = getCSS(parent, 'color');
+            var rgb = fontColor.match(/rgb\((\d{0,3}), (\d{1,3}), (\d{1,3})\)/);
+            // set font style
+            var fontWeight = getCSS(parent, 'fontWeight').toLowerCase();
+            if (parseInt(fontWeight, 10) > 600) fontWeight = "bold";  // IE case
+            var fontStyle = getCSS(parent, 'fontStyle').toLowerCase();
+            if (fontWeight !== 'bold') fontWeight = '';
+            if (fontStyle !== 'italic') fontStyle = '';
+            pdf.setFontType((fontWeight + fontStyle) || 'normal');
+            pdf.setTextColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]));
+            // set font family
+            var fontFamily = getCSS(parent, 'fontFamily').toLowerCase().split(' ')[0].replace(/("|'|,)/gm, "");
             var fonts = pdf.getFontList();
             if (fontFamily in fonts) {
-                pdf.setFont(fontFamily, fontType);
+                pdf.setFont(fontFamily);
             } else {
-                pdf.setFont('helvetica', fontType);
+                pdf.setFont('helvetica'); // for now, all non-supported fonts will roll back to helvetica
+                parent.style.fontFamily = 'Helvetica';
             }
-            
-            // in the PDF, the y position of a text is based on the
-            // glyph's origin. In most fonts, the origin is not the
-            // bottom of the glyph; it is the bottom of the letter 'o',
-            // but the letter 'g' has a lower bottom. In this case,
-            // to get the correct position for the text is necessary
-            // to calculate the glyphs' baseline position.
-            var baseline = getBaseline(wrapper);
-            pdf.text(stringArray, bounds.left, baseline);
-            //return to normal
+            // insert in the pdf word by word
+            var offsetStart = 0;
+            var offsetEnd = 0;
+            var rect;
+            for (var i = 0; i < words.length; i++) {
+                offsetEnd += words[i].length;
+                rect = getTextBounds(textNode, offsetStart, offsetEnd-1 || offsetEnd);
+                // rect = parent.getBoundingClientRect();
+                // in the PDF, the y position of a text is based on the
+                // glyph's origin. In most fonts, the origin is not the
+                // bottom of the glyph; it is the bottom of the letter 'o',
+                // but the letter 'g' has a lower bottom. In this case,
+                // to get the correct position for the text is necessary
+                // to calculate the glyphs' baseline position.
+                var baseline = (rect.top + (rect.height * getBaseline(parent)));
+                pdf.text([words[i]], rect.left, baseline);
+                offsetStart += words[i].length;
+            }
         }
         return pdf;
-    };
+    }
+
+    function getTextBounds(textNode, offsetStart, offsetEnd) {
+        var range = document.createRange()
+        range.setStart(textNode, offsetStart);
+        range.setEnd(textNode, offsetEnd);
+        return getBounds(range);
+    }
 
     function drawBorders(pdf, element) {
         var borderAttributes = getBorderAttributes(element);
@@ -270,7 +266,7 @@
         return borderAttributes;
     }
 
-    function insertTag () {
+    function insertTag() {
         console.log('insertTableTag stub');
         return;
     }
@@ -311,33 +307,30 @@
             );
     }
 
+    function isSupportedElement(element) {
+        var doNotRender = function(nodeName) {
+            return (element.nodeName.toUpperCase() === nodeName.toUpperCase());
+        };
+        var notSupported = gOptions.doNotRender || [];
+
+        return !notSupported.filter(doNotRender).length;
+    }
+
     function isOverFlowHidden(element) {
 
         return /(hidden|scroll|auto)/.test(getCSS(element, "overflow"));
     }
 
-    function isTransformed(element) {
-        var transform = getCSS(element, 'transform') || getCSS(element, '-ms-transform') || getCSS(element, '-o-transform')
-            || getCSS(element, '-moz-transform') || getCSS(element, '-webkit-transform');
-        return transform !== 'none';
-    }
-
-    function getTransform(element) { //TODO: finish this
-        return {
-            origin: [0,0],
-            matrix: [0,0,0,0,0,0]
-        };
-    }
-
-    function clipElement(pdf, node) {
-        var bounds = getBounds(node);
-        var borderAttributes = getBorderAttributes(node);
+    function clipElement(pdf, element) {
+        var bounds = getBounds(element);
+        var borderAttributes = getBorderAttributes(element);
         pdf.clipRect(
             bounds.left + borderAttributes[3].width,
             bounds.top + borderAttributes[0].width,
             bounds.width - (borderAttributes[1].width + borderAttributes[3].width),
             bounds.height - (borderAttributes[0].width + borderAttributes[2].width)
         );
+        return pdf;
     }
 
     // from https://github.com/nathanhammond/baseline-ratio/blob/master/baseline-ratio.js
@@ -379,12 +372,18 @@
         var largedims = large.getBoundingClientRect();
         element.removeChild(container);
 
-        // Calculate where the baseline was, percentage-wise.
+        // Calculate where the baseline is
         var baselineposition = smalldims.top - largedims.top;
-        var bounds = getBounds(element);
         var height = largedims.height;
-        return (bounds.top + (bounds.height * (baselineposition / height))) || 0;
-        // return (1 - (baselineposition / height)) || 0;
+
+        return (baselineposition / height) || 0;
+    }
+
+    function forceRedraw(element) {
+        var disp = element.style.display;
+        element.style.display = 'none';
+        var trick = element.offsetHeight;
+        element.style.display = disp;
     }
 
 })(jsPDF.API);
