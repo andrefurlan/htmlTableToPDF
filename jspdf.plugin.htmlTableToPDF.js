@@ -35,12 +35,6 @@
 
     /**
      * Saves the current drawing state
-     *
-     * @param {}
-     * @function
-     * @returns {jsPDF}
-     * @methodOf jsPDF#
-     * @name saveState
      */
     API.saveState = function() {
         this.internal.write('q');  //save state
@@ -48,12 +42,6 @@
 
     /**
      * Restores the current drawing state
-     *
-     * @param {}
-     * @function
-     * @returns {jsPDF}
-     * @methodOf jsPDF#
-     * @name restoreState
      */
     API.restoreState = function() {
         this.internal.write('Q'); //restore
@@ -61,12 +49,6 @@
 
     /**
      * Clips the current drawing in the rectangle boundaries
-     *
-     * @param {number, number, number, number}
-     * @function
-     * @returns {jsPDF}
-     * @methodOf jsPDF#
-     * @name clipRect
      */
     API.clipRect = function(x,y,w,h) {
         this.rect(x,y,w,h,null);
@@ -124,11 +106,17 @@
 
     function renderText(pdf, textNode) { //TODO: finish, refactor, deal with multiple lines
         var content = textNode.nodeValue.replace(/(\r\n|\n|\r)/g, " ");
-        var parent = textNode.parentNode;
-        var wrap = getCSS(parent, 'whiteSpace');
-        var words = content.match(/[^\s-]+(\s|-)?/g); //break down in words and keep the delimiter (\s and -)
-        if(words){
-            if(content.match(/^\s/)) words[0] = " " + words[0];  // handles the anowing case of a white space at the beggining
+        if(content.trim()){
+            var parent = textNode.parentNode;
+            var wrap = getCSS(parent, 'whiteSpace');
+            var words;
+            if(wrap === 'nowrap') {
+                words = [content.trim()];
+            } else {
+                words = content.match(/[^\s-]+(\s|-)?/g); //break down in words and keep the delimiter (\s and -)
+                if(content.match(/^\s/)) words[0] = " " + words[0];  // handles the anowing case of a white space at the beggining
+            }
+            
             // set font size
             var fontSize = getCSSFloat(parent, 'fontSize');
             var points = fontSize * pdf.internal.scaleFactor;
@@ -136,6 +124,7 @@
             // set font color
             var fontColor = getCSS(parent, 'color');
             var rgb = fontColor.match(/rgb\((\d{0,3}), (\d{1,3}), (\d{1,3})\)/);
+            pdf.setTextColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]));
             // set font style
             var fontWeight = getCSS(parent, 'fontWeight').toLowerCase();
             if (parseInt(fontWeight, 10) > 600) fontWeight = "bold";  // IE case
@@ -143,7 +132,7 @@
             if (fontWeight !== 'bold') fontWeight = '';
             if (fontStyle !== 'italic') fontStyle = '';
             pdf.setFontType((fontWeight + fontStyle) || 'normal');
-            pdf.setTextColor(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]));
+
             // set font family
             var fontFamily = getCSS(parent, 'fontFamily').toLowerCase().split(' ')[0].replace(/("|'|,)/gm, "");
             var fonts = pdf.getFontList();
